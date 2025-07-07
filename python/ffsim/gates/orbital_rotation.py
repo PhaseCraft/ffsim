@@ -113,7 +113,9 @@ def _apply_orbital_rotation_spinless(
         apply_phase_shift_in_place(vec, phase_shift, indices)
     return vec.reshape(-1)
 
-# 
+
+#
+
 
 def _apply_orbital_rotation_spinful(
     vec: np.ndarray,
@@ -121,7 +123,9 @@ def _apply_orbital_rotation_spinful(
     norb: int,
     nelec: tuple[int, int],
 ):
-    givens_decomp_a, givens_decomp_b = _get_givens_decomposition(mat)
+    givens_decomp_a, givens_decomp_b, shape_a, shape_b = _get_givens_decomposition(
+        mat, return_shapes=True
+    )
     n_alpha, n_beta = nelec
     dim_a = math.comb(norb, n_alpha)
     dim_b = math.comb(norb, n_beta)
@@ -130,31 +134,54 @@ def _apply_orbital_rotation_spinful(
     if givens_decomp_a is not None:
         # transform alpha
         givens_rotations, phase_shifts = givens_decomp_a
-        for i, phase_shift in enumerate(phase_shifts):
-            indices = _one_subspace_indices(norb, n_alpha, (i,))
-            apply_phase_shift_in_place(vec, phase_shift, indices)
-        for c, s, i, j in givens_rotations[::-1]:
-            _apply_orbital_rotation_adjacent_spin_in_place(
-                vec, c, s.conjugate(), (i, j), norb, n_alpha
-            )
-
+        m, n = shape_a
+        if m >= n:
+            for i, phase_shift in enumerate(phase_shifts):
+                indices = _one_subspace_indices(norb, n_alpha, (i,))
+                apply_phase_shift_in_place(vec, phase_shift, indices)
+            for c, s, i, j in givens_rotations[::-1]:
+                _apply_orbital_rotation_adjacent_spin_in_place(
+                    vec, c, s.conjugate(), (i, j), norb, n_alpha
+                )
+        else:
+            print("Applying orbital rotation to alpha with m < n")
+            # apply rotations first, then phase shifts
+            # this is the opposite order to the case where m >= n
+            for c, s, i, j in givens_rotations:
+                _apply_orbital_rotation_adjacent_spin_in_place(
+                    vec, c, s.conjugate(), (i, j), norb, n_alpha
+                )
+            for i, phase_shift in enumerate(phase_shifts):
+                indices = _one_subspace_indices(norb, n_alpha, (i,))
+                apply_phase_shift_in_place(vec, phase_shift, indices)
 
     if givens_decomp_b is not None:
         # transform beta
         # copy transposed vector to align memory layout
         vec = np.ascontiguousarray(vec.T)
         givens_rotations, phase_shifts = givens_decomp_b
-        for i, phase_shift in enumerate(phase_shifts):
-            indices = _one_subspace_indices(norb, n_beta, (i,))
-            apply_phase_shift_in_place(vec, phase_shift, indices)
-        for c, s, i, j in givens_rotations[::-1]:
-            _apply_orbital_rotation_adjacent_spin_in_place(
-                vec, c, s.conjugate(), (i, j), norb, n_beta
-            )
+        m, n = shape_b
+        if m >= n:
+            for i, phase_shift in enumerate(phase_shifts):
+                indices = _one_subspace_indices(norb, n_beta, (i,))
+                apply_phase_shift_in_place(vec, phase_shift, indices)
+            for c, s, i, j in givens_rotations[::-1]:
+                _apply_orbital_rotation_adjacent_spin_in_place(
+                    vec, c, s.conjugate(), (i, j), norb, n_beta
+                )
+        else:
+            for c, s, i, j in givens_rotations:
+                _apply_orbital_rotation_adjacent_spin_in_place(
+                    vec, c, s.conjugate(), (i, j), norb, n_beta
+                )
+            for i, phase_shift in enumerate(phase_shifts):
+                indices = _one_subspace_indices(norb, n_beta, (i,))
+                apply_phase_shift_in_place(vec, phase_shift, indices)
 
         vec = vec.T
 
     return vec.reshape(-1)
+
 
 # def _apply_orbital_rotation_spinful(
 #     vec: np.ndarray,
@@ -198,21 +225,30 @@ def _apply_orbital_rotation_spinful(
 
 def _get_givens_decomposition(
     mat: np.ndarray | tuple[np.ndarray | None, np.ndarray | None],
+    return_shapes=False,
 ) -> tuple[
     tuple[list[GivensRotation], np.ndarray] | None,
     tuple[list[GivensRotation], np.ndarray] | None,
 ]:
     if isinstance(mat, np.ndarray) and mat.ndim == 2:
         decomp = givens_decomposition(mat)
+        if return_shapes:
+            return decomp, decomp, mat.shape, mat.shape
         return decomp, decomp
     else:
         mat_a, mat_b = mat
         decomp_a = None
         decomp_b = None
+        shape_a = None
+        shape_b = None
         if mat_a is not None:
             decomp_a = givens_decomposition(mat_a)
+            shape_a = mat_a.shape
         if mat_b is not None:
             decomp_b = givens_decomposition(mat_b)
+            shape_b = mat_b.shape
+        if return_shapes:
+            return decomp_a, decomp_b, shape_a, shape_b
         return decomp_a, decomp_b
 
 

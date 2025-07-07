@@ -89,6 +89,7 @@ def zrotg(a: complex, b: complex, tol=1e-12) -> tuple[float, complex]:
     c, s = zrotg_(a, b)
     return c.real, s
 
+
 def givens_decomposition(
     mat: np.ndarray,
 ) -> Tuple[List[GivensRotation], np.ndarray]:
@@ -103,13 +104,13 @@ def givens_decomposition(
         - A list of Givens rotations that upper-triangularize the matrix.
         - The resulting upper-triangular matrix (R-factor).
     """
-   # print(mat)
-
+    # print(mat)
 
     m, n = mat.shape
+    print(m, n)
     if m < n:
         mat = mat.T.conj()
-        m, n = n, m 
+        m, n = n, m
         transpose = True
     else:
         transpose = False
@@ -120,6 +121,7 @@ def givens_decomposition(
     for col in range(n):
         for row in range(m - 1, col, -1):  # from bottom up
             if not cmath.isclose(current_matrix[row, col], 0.0, abs_tol=1e-12):
+                # Left rotation
                 c, s = zrotg(current_matrix[row - 1, col], current_matrix[row, col])
                 rotations.append(GivensRotation(c, -s.conjugate(), row - 1, row))
                 # Apply rotation to all columns
@@ -127,14 +129,11 @@ def givens_decomposition(
                     current_matrix[row - 1], current_matrix[row], c, s
                 )
 
-    #print(rotations)
     if transpose:
-        rotations = [
-            GivensRotation(r.c, r.s.conjugate(), r.j, r.i) for r in rotations
-        ][::-1]
+        rotations = [GivensRotation(r.c, r.s.conjugate(), r.j, r.i) for r in rotations]
         current_matrix = current_matrix.T.conj()
-   # print("Givens rotation",m, n, len(rotations))
     return rotations, np.diag(current_matrix)
+
 
 # def givens_decomposition(
 #     mat: np.ndarray,
@@ -176,7 +175,7 @@ def givens_decomposition(
 #     The decomposition algorithm is described in :ref:`[1] <reference>`.
 
 #     .. _reference:
-    
+
 #     [1] William R. Clements et al.
 #     `Optimal design for universal multiport interferometers`_.
 
