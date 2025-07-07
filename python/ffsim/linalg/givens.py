@@ -89,131 +89,177 @@ def zrotg(a: complex, b: complex, tol=1e-12) -> tuple[float, complex]:
     c, s = zrotg_(a, b)
     return c.real, s
 
-
 def givens_decomposition(
     mat: np.ndarray,
-) -> tuple[list[GivensRotation], np.ndarray]:
-    r"""Givens rotation decomposition of a unitary matrix.
-
-    The Givens rotation decomposition of an :math:`n \times n` unitary matrix :math:`U`
-    is given by
-
-    .. math::
-
-        U = D G_L^* G_{L-1}^* \cdots G_1^*
-
-    where :math:`D` is a diagonal matrix and each :math:`G_k` is a Givens rotation.
-    Here, the star :math:`*` denotes the element-wise complex conjugate.
-    A Givens rotation acts on the two-dimensional subspace spanned by the :math:`i`-th
-    and :math:`j`-th basis vectors as
-
-    .. math::
-
-        \begin{pmatrix}
-            c & s \\
-            -s^* & c \\
-        \end{pmatrix}
-
-    where :math:`c` is a real number and :math:`s` is a complex number.
-    Therefore, a Givens rotation is described by a 4-tuple
-    :math:`(c, s, i, j)`, where :math:`c` and :math:`s` are the numbers appearing
-    in the rotation matrix, and :math:`i` and :math:`j` are the
-    indices of the basis vectors of the subspace being rotated.
-    This function always returns Givens rotations with the property that
-    :math:`i` and :math:`j` differ by at most one, that is, either :math:`j = i + 1`
-    or :math:`j = i - 1`.
-
-    The number of Givens rotations :math:`L` is at most :math:`\frac{n (n-1)}{2}`,
-    but it may be less. If we think of Givens rotations acting on disjoint indices
-    as operations that can be performed in parallel, then the entire sequence of
-    rotations can always be performed using at most `n` layers of parallel operations.
-    The decomposition algorithm is described in :ref:`[1] <reference>`.
-
-    .. _reference:
-    
-    [1] William R. Clements et al.
-    `Optimal design for universal multiport interferometers`_.
+) -> Tuple[List[GivensRotation], np.ndarray]:
+    """
+    Perform Givens rotation decomposition on a (possibly rectangular) m × n matrix (m ≥ n).
+    It zeroes elements below the diagonal using left multiplication by Givens rotations.
 
     Args:
-        mat: The unitary matrix to decompose into Givens rotations.
+        mat: A complex-valued m × n matrix where m ≥ n.
 
     Returns:
-        - A list containing the Givens rotations :math:`G_1, \ldots, G_L`.
-          Each Givens rotation is represented as a 4-tuple
-          :math:`(c, s, i, j)`, where :math:`c` and :math:`s` are the numbers appearing
-          in the rotation matrix, and :math:`i` and :math:`j` are the
-          indices of the basis vectors of the subspace being rotated.
-        - A Numpy array containing the diagonal elements of the matrix :math:`D`.
-
-    .. _Optimal design for universal multiport interferometers: https://doi.org/10.1364/OPTICA.3.001460
+        - A list of Givens rotations that upper-triangularize the matrix.
+        - The resulting upper-triangular matrix (R-factor).
     """
-    n, _ = mat.shape
+   # print(mat)
+
+
+    m, n = mat.shape
+    if m < n:
+        mat = mat.T.conj()
+        m, n = n, m 
+        transpose = True
+    else:
+        transpose = False
     current_matrix = mat.astype(complex, copy=True)
-    left_rotations = []
-    right_rotations = []
+    rotations = []
 
-    # compute left and right Givens rotations
-    for i in range(n - 1):
-        if i % 2 == 0:
-            # rotate columns by right multiplication
-            for j in range(i + 1):
-                target_index = i - j
-                row = n - j - 1
-                if not cmath.isclose(current_matrix[row, target_index], 0.0):
-                    # zero out element at target index in given row
-                    c, s = zrotg(
-                        current_matrix[row, target_index + 1],
-                        current_matrix[row, target_index],
-                    )
-                    right_rotations.append(
-                        GivensRotation(c, s, target_index + 1, target_index)
-                    )
-                    (
-                        current_matrix[:, target_index + 1],
-                        current_matrix[:, target_index],
-                    ) = zrot(
-                        current_matrix[:, target_index + 1],
-                        current_matrix[:, target_index],
-                        c,
-                        s,
-                    )
-        else:
-            # rotate rows by left multiplication
-            for j in range(i + 1):
-                target_index = n - i + j - 1
-                col = j
-                if not cmath.isclose(current_matrix[target_index, col], 0.0):
-                    # zero out element at target index in given column
-                    c, s = zrotg(
-                        current_matrix[target_index - 1, col],
-                        current_matrix[target_index, col],
-                    )
-                    left_rotations.append(
-                        GivensRotation(c, s, target_index - 1, target_index)
-                    )
-                    (
-                        current_matrix[target_index - 1],
-                        current_matrix[target_index],
-                    ) = zrot(
-                        current_matrix[target_index - 1],
-                        current_matrix[target_index],
-                        c,
-                        s,
-                    )
+    # Eliminate subdiagonal entries column by column
+    for col in range(n):
+        for row in range(m - 1, col, -1):  # from bottom up
+            if not cmath.isclose(current_matrix[row, col], 0.0, abs_tol=1e-12):
+                c, s = zrotg(current_matrix[row - 1, col], current_matrix[row, col])
+                rotations.append(GivensRotation(c, -s.conjugate(), row - 1, row))
+                # Apply rotation to all columns
+                current_matrix[row - 1], current_matrix[row] = zrot(
+                    current_matrix[row - 1], current_matrix[row], c, s
+                )
 
-    # convert left rotations to right rotations
-    for c, s, i, j in reversed(left_rotations):
-        c, s = zrotg(c * current_matrix[j, j], s.conjugate() * current_matrix[i, i])
-        right_rotations.append(GivensRotation(c, -s.conjugate(), i, j))
+    #print(rotations)
+    if transpose:
+        rotations = [
+            GivensRotation(r.c, r.s.conjugate(), r.j, r.i) for r in rotations
+        ][::-1]
+        current_matrix = current_matrix.T.conj()
+   # print("Givens rotation",m, n, len(rotations))
+    return rotations, np.diag(current_matrix)
 
-        givens_mat = np.array([[c, -s], [s.conjugate(), c]])
-        givens_mat[:, 0] *= current_matrix[i, i]
-        givens_mat[:, 1] *= current_matrix[j, j]
-        c, s = zrotg(givens_mat[1, 1], givens_mat[1, 0])
-        new_givens_mat = np.array([[c, s], [-s.conjugate(), c]])
-        phase_matrix = givens_mat @ new_givens_mat
-        current_matrix[i, i] = phase_matrix[0, 0]
-        current_matrix[j, j] = phase_matrix[1, 1]
+# def givens_decomposition(
+#     mat: np.ndarray,
+# ) -> tuple[list[GivensRotation], np.ndarray]:
+#     r"""Givens rotation decomposition of a unitary matrix.
 
-    # return decomposition
-    return right_rotations, np.diagonal(current_matrix)
+#     The Givens rotation decomposition of an :math:`n \times n` unitary matrix :math:`U`
+#     is given by
+
+#     .. math::
+
+#         U = D G_L^* G_{L-1}^* \cdots G_1^*
+
+#     where :math:`D` is a diagonal matrix and each :math:`G_k` is a Givens rotation.
+#     Here, the star :math:`*` denotes the element-wise complex conjugate.
+#     A Givens rotation acts on the two-dimensional subspace spanned by the :math:`i`-th
+#     and :math:`j`-th basis vectors as
+
+#     .. math::
+
+#         \begin{pmatrix}
+#             c & s \\
+#             -s^* & c \\
+#         \end{pmatrix}
+
+#     where :math:`c` is a real number and :math:`s` is a complex number.
+#     Therefore, a Givens rotation is described by a 4-tuple
+#     :math:`(c, s, i, j)`, where :math:`c` and :math:`s` are the numbers appearing
+#     in the rotation matrix, and :math:`i` and :math:`j` are the
+#     indices of the basis vectors of the subspace being rotated.
+#     This function always returns Givens rotations with the property that
+#     :math:`i` and :math:`j` differ by at most one, that is, either :math:`j = i + 1`
+#     or :math:`j = i - 1`.
+
+#     The number of Givens rotations :math:`L` is at most :math:`\frac{n (n-1)}{2}`,
+#     but it may be less. If we think of Givens rotations acting on disjoint indices
+#     as operations that can be performed in parallel, then the entire sequence of
+#     rotations can always be performed using at most `n` layers of parallel operations.
+#     The decomposition algorithm is described in :ref:`[1] <reference>`.
+
+#     .. _reference:
+    
+#     [1] William R. Clements et al.
+#     `Optimal design for universal multiport interferometers`_.
+
+#     Args:
+#         mat: The unitary matrix to decompose into Givens rotations.
+
+#     Returns:
+#         - A list containing the Givens rotations :math:`G_1, \ldots, G_L`.
+#           Each Givens rotation is represented as a 4-tuple
+#           :math:`(c, s, i, j)`, where :math:`c` and :math:`s` are the numbers appearing
+#           in the rotation matrix, and :math:`i` and :math:`j` are the
+#           indices of the basis vectors of the subspace being rotated.
+#         - A Numpy array containing the diagonal elements of the matrix :math:`D`.
+
+#     .. _Optimal design for universal multiport interferometers: https://doi.org/10.1364/OPTICA.3.001460
+#     """
+#     n, _ = mat.shape
+#     current_matrix = mat.astype(complex, copy=True)
+#     left_rotations = []
+#     right_rotations = []
+
+#     # compute left and right Givens rotations
+#     for i in range(n - 1):
+#         if i % 2 == 0:
+#             # rotate columns by right multiplication
+#             for j in range(i + 1):
+#                 target_index = i - j
+#                 row = n - j - 1
+#                 if not cmath.isclose(current_matrix[row, target_index], 0.0):
+#                     # zero out element at target index in given row
+#                     c, s = zrotg(
+#                         current_matrix[row, target_index + 1],
+#                         current_matrix[row, target_index],
+#                     )
+#                     right_rotations.append(
+#                         GivensRotation(c, s, target_index + 1, target_index)
+#                     )
+#                     (
+#                         current_matrix[:, target_index + 1],
+#                         current_matrix[:, target_index],
+#                     ) = zrot(
+#                         current_matrix[:, target_index + 1],
+#                         current_matrix[:, target_index],
+#                         c,
+#                         s,
+#                     )
+#         else:
+#             # rotate rows by left multiplication
+#             for j in range(i + 1):
+#                 target_index = n - i + j - 1
+#                 col = j
+#                 if not cmath.isclose(current_matrix[target_index, col], 0.0):
+#                     # zero out element at target index in given column
+#                     c, s = zrotg(
+#                         current_matrix[target_index - 1, col],
+#                         current_matrix[target_index, col],
+#                     )
+#                     left_rotations.append(
+#                         GivensRotation(c, s, target_index - 1, target_index)
+#                     )
+#                     (
+#                         current_matrix[target_index - 1],
+#                         current_matrix[target_index],
+#                     ) = zrot(
+#                         current_matrix[target_index - 1],
+#                         current_matrix[target_index],
+#                         c,
+#                         s,
+#                     )
+
+#     # convert left rotations to right rotations
+#     for c, s, i, j in reversed(left_rotations):
+#         c, s = zrotg(c * current_matrix[j, j], s.conjugate() * current_matrix[i, i])
+#         right_rotations.append(GivensRotation(c, -s.conjugate(), i, j))
+
+#         givens_mat = np.array([[c, -s], [s.conjugate(), c]])
+#         givens_mat[:, 0] *= current_matrix[i, i]
+#         givens_mat[:, 1] *= current_matrix[j, j]
+#         c, s = zrotg(givens_mat[1, 1], givens_mat[1, 0])
+#         new_givens_mat = np.array([[c, s], [-s.conjugate(), c]])
+#         phase_matrix = givens_mat @ new_givens_mat
+#         current_matrix[i, i] = phase_matrix[0, 0]
+#         current_matrix[j, j] = phase_matrix[1, 1]
+
+#     # return decomposition
+#     return right_rotations, np.diagonal(current_matrix)

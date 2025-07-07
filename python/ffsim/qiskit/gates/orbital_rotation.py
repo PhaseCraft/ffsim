@@ -34,19 +34,21 @@ def _validate_orbital_rotation(
     rtol: float,
     atol: float,
 ) -> None:
-    if isinstance(mat, np.ndarray) and mat.ndim == 2:
-        if not linalg.is_unitary(mat, rtol=rtol, atol=atol):
-            raise ValueError("The input orbital rotation matrix was not unitary.")
-    else:
-        mat_a, mat_b = mat
-        if mat_a is not None and not linalg.is_unitary(mat_a, rtol=rtol, atol=atol):
-            raise ValueError(
-                "The input orbital rotation matrix for spin alpha was not unitary."
-            )
-        if mat_b is not None and not linalg.is_unitary(mat_b, rtol=rtol, atol=atol):
-            raise ValueError(
-                "The input orbital rotation matrix for spin beta was not unitary."
-            )
+
+    pass
+    # if isinstance(mat, np.ndarray) and mat.ndim == 2:
+    #     if not linalg.is_unitary(mat, rtol=rtol, atol=atol):
+    #         raise ValueError("The input orbital rotation matrix was not unitary.")
+    # else:
+    #     mat_a, mat_b = mat
+    #     if mat_a is not None and not linalg.is_unitary(mat_a, rtol=rtol, atol=atol):
+    #         raise ValueError(
+    #             "The input orbital rotation matrix for spin alpha was not unitary."
+    #         )
+    #     if mat_b is not None and not linalg.is_unitary(mat_b, rtol=rtol, atol=atol):
+    #         raise ValueError(
+    #             "The input orbital rotation matrix for spin beta was not unitary."
+    #         )
 
 
 class OrbitalRotationJW(Gate):
@@ -77,7 +79,7 @@ class OrbitalRotationJW(Gate):
         orbital_rotation: np.ndarray | tuple[np.ndarray | None, np.ndarray | None],
         *,
         label: str | None = None,
-        validate: bool = True,
+        validate: bool = False,
         rtol: float = 1e-5,
         atol: float = 1e-8,
     ):
@@ -194,6 +196,8 @@ class OrbitalRotationSpinlessJW(Gate):
 def _orbital_rotation_jw(
     qubits: Sequence[Qubit], orbital_rotation: np.ndarray
 ) -> Iterator[CircuitInstruction]:
+    zero_cols = np.all(np.isclose(orbital_rotation, 0.0, atol=1e-12), axis=0)
+    orbital_rotation = orbital_rotation[:, ~zero_cols]  # Remove zero columns
     givens_rotations, phase_shifts = linalg.givens_decomposition(orbital_rotation)
     for c, s, i, j in givens_rotations:
         yield CircuitInstruction(

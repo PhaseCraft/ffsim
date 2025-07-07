@@ -228,6 +228,8 @@ def double_factorized(
             "Double-factorization of complex two-body tensors is not supported."
         )
 
+    _validate_diag_coulomb_indices(diag_coulomb_indices)
+
     norb, _, _, _ = two_body_tensor.shape
 
     if not norb:
@@ -236,6 +238,13 @@ def double_factorized(
     if max_vecs is None:
         max_vecs = norb * (norb + 1) // 2
     if optimize:
+        if diag_coulomb_indices is None:
+            diag_coulomb_mask = None
+        else:
+            diag_coulomb_mask = np.zeros((norb, norb), dtype=bool)
+            rows, cols = zip(*diag_coulomb_indices)
+            diag_coulomb_mask[rows, cols] = True
+            diag_coulomb_mask[cols, rows] = True
         return _double_factorized_compressed(
             two_body_tensor,
             tol=tol,
@@ -243,7 +252,7 @@ def double_factorized(
             method=method,
             callback=callback,
             options=options,
-            diag_coulomb_indices=diag_coulomb_indices,
+            diag_coulomb_mask=diag_coulomb_mask,
         )
     if cholesky:
         return _double_factorized_explicit_cholesky(
@@ -328,21 +337,14 @@ def _double_factorized_compressed(
     method: str,
     callback,
     options: dict | None,
-    diag_coulomb_indices: list[tuple[int, int]] | None,
+    diag_coulomb_mask: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     diag_coulomb_mats, orbital_rotations = _double_factorized_explicit_cholesky(
         two_body_tensor, tol=tol, max_vecs=max_vecs
     )
     n_tensors, norb, _ = orbital_rotations.shape
-
-    _validate_diag_coulomb_indices(diag_coulomb_indices)
-    if diag_coulomb_indices is None:
+    if diag_coulomb_mask is None:
         diag_coulomb_mask = np.ones((norb, norb), dtype=bool)
-    else:
-        diag_coulomb_mask = np.zeros((norb, norb), dtype=bool)
-        rows, cols = zip(*diag_coulomb_indices)
-        diag_coulomb_mask[rows, cols] = True
-        diag_coulomb_mask[cols, rows] = True
     diag_coulomb_mask = np.triu(diag_coulomb_mask)
 
     def fun(x):
@@ -479,7 +481,7 @@ def _grad_leaf_log(mat: np.ndarray, grad_leaf: np.ndarray) -> np.ndarray:
 
 
 def double_factorized_t2(
-    t2_amplitudes: np.ndarray, *, tol: float = 1e-8, max_vecs: int | None = None
+    t2_amplitudes: np.ndarray, *, tol: float = 1e-8, max_vecs: int | None = None, truncate_rho: int | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     r"""Double-factorized decomposition of t2 amplitudes.
 
@@ -542,12 +544,30 @@ def double_factorized_t2(
         one_body_tensor[0] = _quadrature(mat, sign=1)
         one_body_tensor[1] = _quadrature(mat, sign=-1)
 
-    eigs, orbital_rotations = np.linalg.eigh(one_body_tensors)
+    # eigs, orbital_rotations = np.linalg.eigh(one_body_tensors)
+    shape = one_body_tensors.shape
+    flat_tensors = one_body_tensors.reshape(-1, shape[-2], shape[-1])
+
+    eigs = []
+    rots = []
+    for tensor in flat_tensors:
+        eig = np.zeros((shape[-1]))
+        rot = np.zeros((shape[-2], shape[-1]), dtype=complex)
+        eig_, rot_ = _truncated_eigh(tensor, tol=0, max_vecs=truncate_rho)
+        eig[: len(eig_)] = eig_
+        rot[:, : len(eig_)] = rot_
+        eigs.append(eig)
+        rots.append(rot)
+
+    eigs = np.array(eigs).reshape(*shape[:-2], shape[-1])
+    orbital_rotations = np.array(rots).reshape(*shape[:-2], shape[-2], shape[-1])
+    
+
     coeffs = np.array([1, -1]) * outer_eigs[:, None]
     diag_coulomb_mats = (
         coeffs[:, :, None, None] * eigs[:, :, :, None] * eigs[:, :, None, :]
     )
-
+    #print(np.round(orbital_rotations,8))
     return diag_coulomb_mats, orbital_rotations
 
 

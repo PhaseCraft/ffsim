@@ -116,15 +116,15 @@ class UCJOpSpinBalanced(
                 raise ValueError(
                     "Diagonal Coulomb matrices were not all real symmetric."
                 )
-            if not all(
-                linalg.is_unitary(orbital_rotation, rtol=rtol, atol=atol)
-                for orbital_rotation in self.orbital_rotations
-            ):
-                raise ValueError("Orbital rotations were not all unitary.")
-            if self.final_orbital_rotation is not None and not linalg.is_unitary(
-                self.final_orbital_rotation, rtol=rtol, atol=atol
-            ):
-                raise ValueError("Final orbital rotation was not unitary.")
+            # if not all(
+            #     linalg.is_unitary(orbital_rotation, rtol=rtol, atol=atol)
+            #     for orbital_rotation in self.orbital_rotations
+            # ):
+            #     raise ValueError("Orbital rotations were not all unitary.")
+            # if self.final_orbital_rotation is not None and not linalg.is_unitary(
+            #     self.final_orbital_rotation, rtol=rtol, atol=atol
+            # ):
+            #     raise ValueError("Final orbital rotation was not unitary.")
 
     @property
     def norb(self):
@@ -297,6 +297,7 @@ class UCJOpSpinBalanced(
             list[tuple[int, int]] | None, list[tuple[int, int]] | None
         ]
         | None = None,
+        with_final_rotation: bool = True,
     ) -> np.ndarray:
         r"""Convert the UCJ operator to a real-valued parameter vector.
 
@@ -357,6 +358,7 @@ class UCJOpSpinBalanced(
             params[index : index + n_params] = orbital_rotation_to_parameters(
                 orbital_rotation
             )
+           # print("orbital_rotation", params[index : index + n_params])
             index += n_params
             # Diag Coulomb matrices
             for indices, this_diag_coulomb_mat in zip(
@@ -367,10 +369,16 @@ class UCJOpSpinBalanced(
                     params[index : index + n_params] = this_diag_coulomb_mat[
                         tuple(zip(*indices))
                     ]
+                 #   print("diag_coulomb_mat", params[index : index + n_params])
                     index += n_params
+ 
         # Final orbital rotation
-        if self.final_orbital_rotation is not None:
+        if self.final_orbital_rotation is not None and with_final_rotation:
             params[index:] = orbital_rotation_to_parameters(self.final_orbital_rotation)
+          #  print("final_orbital_rotation", params[index:])
+            index += norb**2
+        else:
+            params = params[:index]
         return params
 
     @staticmethod
@@ -384,6 +392,7 @@ class UCJOpSpinBalanced(
         ]
         | None = None,
         tol: float = 1e-8,
+        truncate_rho: int | None = None,
     ) -> UCJOpSpinBalanced:
         r"""Initialize the UCJ operator from t2 (and optionally t1) amplitudes.
 
@@ -435,7 +444,7 @@ class UCJOpSpinBalanced(
         nocc, _, nvrt, _ = t2.shape
         norb = nocc + nvrt
 
-        diag_coulomb_mats, orbital_rotations = linalg.double_factorized_t2(t2, tol=tol)
+        diag_coulomb_mats, orbital_rotations = linalg.double_factorized_t2(t2, tol=tol, truncate_rho=truncate_rho)
         diag_coulomb_mats = diag_coulomb_mats.reshape(-1, norb, norb)[:n_reps]
         diag_coulomb_mats = np.stack([diag_coulomb_mats, diag_coulomb_mats], axis=1)
         orbital_rotations = orbital_rotations.reshape(-1, norb, norb)[:n_reps]
@@ -486,13 +495,31 @@ class UCJOpSpinBalanced(
         for (diag_coulomb_mat_aa, diag_coulomb_mat_ab), orbital_rotation in zip(
             self.diag_coulomb_mats, self.orbital_rotations
         ):
+            
+          #  print("Rotation size:", (orbital_rotation.T.conj() @ current_basis).shape)
+            zero_cols = np.all(np.isclose(orbital_rotation, 0.0, atol=1e-12), axis=0)
+            orbital_rotation = orbital_rotation[:, ~zero_cols]  # Remove zero columns
             vec = gates.apply_orbital_rotation(
-                vec,
-                orbital_rotation.T.conj() @ current_basis,
+                vec, 
+                current_basis,
                 norb=norb,
                 nelec=nelec,
                 copy=False,
             )
+            vec = gates.apply_orbital_rotation(
+                vec,
+                orbital_rotation.T.conj(),
+                norb=norb,
+                nelec=nelec,
+                copy=False,
+            )
+            # vec = gates.apply_orbital_rotation(
+            #     vec,
+            #     orbital_rotation.T.conj() @ current_basis,
+            #     norb=norb,
+            #     nelec=nelec,
+            #     copy=False,
+            # )
             vec = gates.apply_diag_coulomb_evolution(
                 vec,
                 (diag_coulomb_mat_aa, diag_coulomb_mat_ab, diag_coulomb_mat_aa),

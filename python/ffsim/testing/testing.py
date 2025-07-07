@@ -85,7 +85,7 @@ def random_nelec(norb: int, *, seed=None) -> tuple[int, int]:
     """
     rng = np.random.default_rng(seed)
     n_alpha, n_beta = rng.integers(norb + 1, size=2)
-    return (int(n_alpha), int(n_beta))
+    return (n_alpha, n_beta)
 
 
 @overload
