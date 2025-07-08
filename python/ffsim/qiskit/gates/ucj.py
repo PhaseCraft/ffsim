@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+import numpy as np
 
 from qiskit.circuit import (
     CircuitInstruction,
@@ -71,6 +72,8 @@ def _ucj_op_spin_balanced_jw(
     for (diag_coulomb_mat_aa, diag_coulomb_mat_ab), orbital_rotation in zip(
         ucj_op.diag_coulomb_mats, ucj_op.orbital_rotations
     ):
+        zero_cols = np.all(np.isclose(orbital_rotation, 0.0, atol=1e-12), axis=0)
+        orbital_rotation = orbital_rotation[:, ~zero_cols]  # Remove zero columns
         yield CircuitInstruction(
             OrbitalRotationJW(ucj_op.norb, orbital_rotation.T.conj()),
             qubits,

@@ -23,7 +23,10 @@ from ffsim.gates.basic_gates import (
 )
 from ffsim.gates.diag_coulomb import apply_diag_coulomb_evolution
 from ffsim.gates.num_op_sum import apply_num_op_sum_evolution
-from ffsim.gates.orbital_rotation import apply_orbital_rotation
+from ffsim.gates.orbital_rotation import (
+    apply_orbital_rotation,
+    apply_givens_orbital_rotations,
+)
 
 __all__ = [
     "apply_diag_coulomb_evolution",
@@ -38,4 +41,5 @@ __all__ = [
     "apply_on_site_interaction",
     "apply_orbital_rotation",
     "apply_tunneling_interaction",
+    "apply_givens_orbital_rotations",
 ]

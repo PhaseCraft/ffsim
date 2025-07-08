@@ -196,13 +196,21 @@ class OrbitalRotationSpinlessJW(Gate):
 def _orbital_rotation_jw(
     qubits: Sequence[Qubit], orbital_rotation: np.ndarray
 ) -> Iterator[CircuitInstruction]:
-    zero_cols = np.all(np.isclose(orbital_rotation, 0.0, atol=1e-12), axis=0)
-    orbital_rotation = orbital_rotation[:, ~zero_cols]  # Remove zero columns
     givens_rotations, phase_shifts = linalg.givens_decomposition(orbital_rotation)
-    for c, s, i, j in givens_rotations:
-        yield CircuitInstruction(
-            XXPlusYYGate(2 * math.acos(c), cmath.phase(s) - 0.5 * math.pi),
-            (qubits[i], qubits[j]),
-        )
-    for i, phase_shift in enumerate(phase_shifts):
-        yield CircuitInstruction(PhaseGate(cmath.phase(phase_shift)), (qubits[i],))
+    m, n = orbital_rotation.shape
+    if m >= n:
+        for c, s, i, j in givens_rotations:
+            yield CircuitInstruction(
+                XXPlusYYGate(2 * math.acos(c), cmath.phase(s) - 0.5 * math.pi),
+                (qubits[i], qubits[j]),
+            )
+        for i, phase_shift in enumerate(phase_shifts):
+            yield CircuitInstruction(PhaseGate(cmath.phase(phase_shift)), (qubits[i],))
+    else:
+        for i, phase_shift in enumerate(phase_shifts):
+            yield CircuitInstruction(PhaseGate(cmath.phase(phase_shift)), (qubits[i],))
+        for c, s, i, j in givens_rotations[::-1]:
+            yield CircuitInstruction(
+                XXPlusYYGate(2 * math.acos(c), cmath.phase(s) - 0.5 * math.pi),
+                (qubits[i], qubits[j]),
+            )

@@ -144,7 +144,6 @@ def _apply_orbital_rotation_spinful(
                     vec, c, s.conjugate(), (i, j), norb, n_alpha
                 )
         else:
-            print("Applying orbital rotation to alpha with m < n")
             # apply rotations first, then phase shifts
             # this is the opposite order to the case where m >= n
             for c, s, i, j in givens_rotations:
@@ -312,3 +311,58 @@ def _shifted_orbitals(norb: int, target_orbs: tuple[int, ...]) -> np.ndarray:
     for index, val in values:
         orbitals = np.insert(orbitals, index, val)
     return orbitals
+
+
+def apply_givens_orbital_rotations(
+    vec: np.ndarray,
+    rotation: tuple[list[GivensRotation], np.ndarray],
+    norb: int,
+    nelec: int | tuple[int, int],
+    transpose: bool = False,
+):
+    n_alpha, n_beta = nelec
+    dim_a = math.comb(norb, n_alpha)
+    dim_b = math.comb(norb, n_beta)
+    vec = np.ascontiguousarray(vec.reshape((dim_a, dim_b)))
+
+    givens_rotations, phase_shifts = rotation
+    if not transpose:
+        for i, phase_shift in enumerate(phase_shifts):
+            indices = _one_subspace_indices(norb, n_alpha, (i,))
+            apply_phase_shift_in_place(vec, phase_shift, indices)
+        for c, s, i, j in givens_rotations[::-1]:
+            _apply_orbital_rotation_adjacent_spin_in_place(
+                vec, c, s.conjugate(), (i, j), norb, n_alpha
+            )
+    else:
+        # apply rotations first, then phase shifts
+        # this is the opposite order to the case where m >= n
+        for c, s, i, j in givens_rotations:
+            _apply_orbital_rotation_adjacent_spin_in_place(
+                vec, c, s, (j, i), norb, n_alpha
+            )
+        for i, phase_shift in enumerate(phase_shifts):
+            indices = _one_subspace_indices(norb, n_alpha, (i,))
+            apply_phase_shift_in_place(vec, phase_shift.conj(), indices)
+
+    vec = np.ascontiguousarray(vec.T)
+    if not transpose:
+        for i, phase_shift in enumerate(phase_shifts):
+            indices = _one_subspace_indices(norb, n_beta, (i,))
+            apply_phase_shift_in_place(vec, phase_shift, indices)
+        for c, s, i, j in givens_rotations[::-1]:
+            _apply_orbital_rotation_adjacent_spin_in_place(
+                vec, c, s.conjugate(), (i, j), norb, n_beta
+            )
+    else:
+        for c, s, i, j in givens_rotations:
+            _apply_orbital_rotation_adjacent_spin_in_place(
+                vec, c, s, (j, i), norb, n_beta
+            )
+        for i, phase_shift in enumerate(phase_shifts):
+            indices = _one_subspace_indices(norb, n_beta, (i,))
+            apply_phase_shift_in_place(vec, phase_shift.conj(), indices)
+
+    vec = vec.T
+
+    return vec.reshape(-1)

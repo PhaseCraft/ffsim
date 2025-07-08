@@ -107,7 +107,6 @@ def givens_decomposition(
     # print(mat)
 
     m, n = mat.shape
-    print(m, n)
     if m < n:
         mat = mat.T.conj()
         m, n = n, m
